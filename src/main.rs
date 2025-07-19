@@ -8,10 +8,13 @@ use serde::{Deserialize, Serialize};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 
-#[tokio::main]
+mod llm;
 
+#[tokio::main]
 async fn main() {
     static SECRET_KEYWORD: &'static str = "BACCANO";
+
+    crate::llm::llm::start_ollama().await;
 
     #[derive(Deserialize, Debug)]
     struct AuthRequest {
