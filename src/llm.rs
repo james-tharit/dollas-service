@@ -1,18 +1,22 @@
 pub mod llm {
+
+    use std::error::Error;
+
     use ollama_rs::{Ollama, generation::completion::request::GenerationRequest};
 
-    pub async fn start_ollama() {
-        let ollama = Ollama::new("http://localhost".to_string(), 11434);
-        let model = "llama2:latest".to_string();
-        let prompt = "Why is the sky blue?".to_string();
-        let res = ollama.generate(GenerationRequest::new(model, prompt)).await;
-
-        if let Ok(res) = res {
-            println!("{}", res.response);
-        }
+    pub fn init(host: String, port: u16) -> Ollama {
+        Ollama::new(host, port)
     }
 
-    pub fn print() {
-        println!("HELLO WORLD");
+    pub async fn generate_response(
+        ollama: &Ollama,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<String, Box<dyn Error>> {
+        let model = model.unwrap_or_else(|| "llama2:latest".to_string());
+        let request = GenerationRequest::new(model, prompt);
+        let res = ollama.generate(request).await?; // Use '?' for error propagation
+
+        Ok(res.response)
     }
 }

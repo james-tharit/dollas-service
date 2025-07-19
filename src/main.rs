@@ -14,8 +14,6 @@ mod llm;
 async fn main() {
     static SECRET_KEYWORD: &'static str = "BACCANO";
 
-    crate::llm::llm::start_ollama().await;
-
     #[derive(Deserialize, Debug)]
     struct AuthRequest {
         secret_keyword: String,
@@ -24,6 +22,12 @@ async fn main() {
     #[derive(Serialize)]
     struct AuthResponse {
         token: bool,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct LLMResponse {
+        message: String,
+        model: Option<String>,
     }
 
     let cors = CorsLayer::new()
@@ -35,9 +39,10 @@ async fn main() {
 
     // our router
     let app = Router::new()
+        .layer(ServiceBuilder::new().layer(cors))
         .route("/", get(health_check))
         .route("/authenticate", post(validate_password))
-        .layer(ServiceBuilder::new().layer(cors));
+        .route("/ollama", post(ollama_init));
 
     // which calls one of these handlers
     async fn health_check() -> &'static str {
@@ -53,6 +58,25 @@ async fn main() {
             Ok(Json(AuthResponse { token: true }))
         } else {
             Err(StatusCode::UNAUTHORIZED)
+        }
+    }
+
+    async fn ollama_init(
+        Json(payload): Json<LLMResponse>,
+    ) -> Result<Json<LLMResponse>, StatusCode> {
+        println!("init Ollama");
+        let ollama = crate::llm::llm::init("http://localhost".to_string(), 11434);
+        let res = crate::llm::llm::generate_response(&ollama, payload.model, payload.message).await;
+
+        match res {
+            Ok(res_message) => {
+                println!("SUCCESS!, message is {:?}", res_message);
+                Ok(Json(LLMResponse {
+                    message: res_message,
+                    model: None,
+                }))
+            }
+            Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
         }
     }
 
