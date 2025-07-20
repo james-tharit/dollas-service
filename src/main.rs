@@ -1,12 +1,10 @@
 use axum::{
     Json, Router,
-    http::{Method, StatusCode, header::CONTENT_TYPE},
+    http::StatusCode,
     routing::{get, post},
 };
-
 use serde::{Deserialize, Serialize};
-use tower::ServiceBuilder;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 mod llm;
 
@@ -29,20 +27,20 @@ async fn main() {
         message: String,
         model: Option<String>,
     }
-
+    // Configure the CORS layer
     let cors = CorsLayer::new()
-        // allow `GET` and `POST` when accessing the resource
-        .allow_methods([Method::GET, Method::POST])
-        // allow requests from any origin
-        .allow_origin(Any)
-        .allow_headers([CONTENT_TYPE]);
+        .allow_origin(AllowOrigin::exact("http://localhost:5173".parse().unwrap()))
+        // Allow all standard methods (GET, POST, PUT, DELETE, etc.)
+        .allow_methods(Any)
+        // Allow all headers
+        .allow_headers(Any);
 
     // our router
     let app = Router::new()
-        .layer(ServiceBuilder::new().layer(cors))
         .route("/", get(health_check))
         .route("/authenticate", post(validate_password))
-        .route("/ollama", post(ollama_init));
+        .route("/ollama", post(ollama_init))
+        .layer(cors);
 
     // which calls one of these handlers
     async fn health_check() -> &'static str {
