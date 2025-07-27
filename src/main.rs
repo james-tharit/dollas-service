@@ -1,8 +1,11 @@
 use axum::{
-    Json, Router,
+    Error, Json, Router,
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
     http::StatusCode,
-    routing::{get, post},
+    response::Response,
+    routing::{any, get, post},
 };
+use ollama_rs::Ollama;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
@@ -30,16 +33,14 @@ async fn main() {
     // Configure the CORS layer
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::exact("http://localhost:5173".parse().unwrap()))
-        // Allow all standard methods (GET, POST, PUT, DELETE, etc.)
         .allow_methods(Any)
-        // Allow all headers
         .allow_headers(Any);
 
     // our router
     let app = Router::new()
         .route("/", get(health_check))
         .route("/authenticate", post(validate_password))
-        .route("/ollama", post(ollama_init))
+        .route("/chat", any(chat_handler))
         .layer(cors);
 
     // which calls one of these handlers
@@ -59,22 +60,49 @@ async fn main() {
         }
     }
 
-    async fn ollama_init(
-        Json(payload): Json<LLMResponse>,
-    ) -> Result<Json<LLMResponse>, StatusCode> {
-        println!("init Ollama");
+    async fn chat_handler(ws: WebSocketUpgrade) -> Response {
         let ollama = crate::llm::llm::init("http://localhost".to_string(), 11434);
-        let res = crate::llm::llm::generate_response(&ollama, payload.model, payload.message).await;
+        ws.on_upgrade(|soc| chat_socket(soc, ollama))
+    }
 
-        match res {
-            Ok(res_message) => {
-                println!("SUCCESS!, message is {:?}", res_message);
-                Ok(Json(LLMResponse {
-                    message: res_message,
-                    model: None,
+    async fn chat_socket(mut socket: WebSocket, ollama: Ollama) {
+        while let Some(msg) = socket.recv().await {
+            let response = if let Ok(msg) = msg {
+                println!("{:?}", msg.to_text());
+                let request: Result<String, Error> = msg.to_text().map(|s| s.to_string());
+
+                let res = crate::llm::llm::generate_response(
+                    &ollama,
+                    None,
+                    match request {
+                        Ok(str) => str,
+                        Err(e) => format!("error: {}", e),
+                    },
+                )
+                .await;
+                match res {
+                    Ok(res_message) => {
+                        println!("SUCCESS!, message is {:?}", res_message);
+                        Ok(res_message)
+                    }
+                    Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+                }
+            } else {
+                // client disconnected
+                return;
+            };
+
+            if socket
+                .send(Message::text(match response {
+                    Ok(str) => str,
+                    Err(e) => format!("error: {}", e),
                 }))
+                .await
+                .is_err()
+            {
+                // client disconnected
+                return;
             }
-            Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
         }
     }
 
