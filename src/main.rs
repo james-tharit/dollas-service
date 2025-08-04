@@ -61,6 +61,7 @@ async fn main() {
     }
 
     async fn chat_handler(ws: WebSocketUpgrade) -> Response {
+        println!("Initiate webSocket connection");
         let ollama = crate::llm::llm::init("http://localhost".to_string(), 11434);
         ws.on_upgrade(|soc| chat_socket(soc, ollama))
     }
@@ -85,7 +86,10 @@ async fn main() {
                         println!("SUCCESS!, message is {:?}", res_message);
                         Ok(res_message)
                     }
-                    Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+                    Err(error) => {
+                        println!("{:?}", error);
+                        Err(StatusCode::INTERNAL_SERVER_ERROR)
+                    }
                 }
             } else {
                 // client disconnected
